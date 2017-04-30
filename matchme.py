@@ -8,13 +8,35 @@ import math
 from multiprocessing.pool import ThreadPool
 import itertools
 import datetime
+from datetime import timedelta as dt
 
 def dumpChannelData(channels):
 	for chan in channels:
 		for slice in chan:
 			for bin in slice:
 				print(bin)
-			
+class Match():
+	def __init__(self, startpos, likeness):
+		self.likeness = likeness
+		self.startpos = startpos
+
+class FftMatch(Match):
+	def __init__(self, trackpos, refpos, likeness):
+		super().__init__(trackpos - refpos, likeness)
+		self.refpos = refpos
+		self.trackpos = trackpos
+
+class GroupMatch(Match):
+	def __init__(self, startpos):
+		super().__init__(startpos, 0)
+		self.count = 0
+		self.aggregate = 0
+
+	def __str__(self):
+		return '{}, {}, {}, {}'.format(self.startpos, self.count, self.likeness, self.aggregate)
+
+	def __repr__(self):
+		return str(self)
 
 class Matcher():
 	WIDTH_BASE = 1000 # Milliseconds
@@ -44,11 +66,11 @@ class Matcher():
 
 	def _partfft(self, data, samplerate):
 		begin = datetime.datetime.now()
-#		print("Starting fft, {} data points".format(len(data)))
+		print("Starting fft, {} data points".format(len(data)))
 		fftdata = np.fft.fft(data)
 		freqs = np.fft.fftfreq(len(fftdata))
 		bins = [0 for _ in range(math.floor((self.freqmax - self.freqmin) / self.freqstep))]
-
+		fftend = datetime.datetime.now()
 		maxval = 0
 		for i in range(len(fftdata)):
 			freq = abs(freqs[i] * samplerate)
@@ -59,11 +81,9 @@ class Matcher():
 			bins[bin] += sample
 			maxval = max(maxval, bins[bin])
 
-		for i in range(len(bins)):
-			bins[i] /= maxval
-#		np.divide(bins, maxval)
+		bins = np.divide(bins, maxval)
 		end = datetime.datetime.now()
-#		print("FFT step took {} ms".format((end - begin).total_seconds() * 1000))
+		print("FFT step took {} ms, postprocessing took {} ms, total : {} ms".format((fftend - begin).total_seconds() * 1000, (end - fftend).total_seconds() * 1000, (end - begin).total_seconds() * 1000))
 		return bins
 
 
@@ -74,8 +94,28 @@ class Matcher():
 		matches = []
 		for chan in range(file.channels):
 			for match in self._fft_fuzzy_match(self.channels[chan], channeldata[chan], matchthreshold):
-				matches.append((chan, match))
-		return matches			
+				matches.append(match)
+
+		timemap = {}
+		aggrmax = 0
+		for match in matches:
+			key = str(match.startpos)
+			groupmatch = None
+			if not key in timemap:
+				groupmatch = GroupMatch(match.startpos)
+			else:
+				groupmatch = timemap[key]
+			groupmatch.count += 1
+			groupmatch.likeness += match.likeness
+			timemap[key] = groupmatch
+			aggrmax = max(aggrmax, groupmatch.likeness)
+
+		for key in timemap:
+			match = timemap[key]
+			match.aggregate = match.likeness / aggrmax
+			match.likeness /= match.count
+
+		return [timemap[key] for key in timemap]
 	
 	def _fft_fuzzy_match(self, reference, sample, matchthreshold):
 		matches = []
@@ -93,7 +133,9 @@ class Matcher():
 						break
 					avg += likeness
 					if i == len(reference) - refid - 1:
-						matches.append(("Match at", datetime.timedelta(seconds=sampleid*self.slicewidth/Matcher.WIDTH_BASE), datetime.timedelta(seconds=refid*self.slicewidth/Matcher.WIDTH_BASE), avg / (len(reference) - refid)))
+						matches.append(FftMatch(dt(seconds=sampleid * self.slicewidth / Matcher.WIDTH_BASE),
+							dt(seconds=refid * self.slicewidth / Matcher.WIDTH_BASE),
+							avg / (len(reference) - refid)))
 		return matches
 
 
@@ -104,8 +146,8 @@ class Matcher():
 			diff += math.sqrt(abs(sample_a[bin] - sample_b[bin]))
 		return (len(sample_a) - diff) / len(sample_a)
 
-rname = 'bedroom_sample.ogg'
-fname = 'bedroom_sample.ogg'
+rname = 'airplanes_sample.ogg'
+fname = 'airplanes.ogg'
 matcher = None
 with SoundFile(rname) as file:
 	matcher = Matcher(file, slicewidth=1000)
@@ -117,37 +159,13 @@ for i in range(0, 1):
 	with SoundFile(fname) as file:
 		times = {}
 		agrmax = 0
-		for match in sorted(matcher.match(file, i/10), key=lambda entry: entry[1][3]):
-#			print(match)
-			seconds = str(match[1][1] - match[1][2])
-			entry = None
-			if not seconds in times:
-				entry = [0, 0]
-			else:
-				entry = times[seconds]
-			entry[0] += 1
-			entry[1] += match[1][3]
-			times[seconds] = entry
-			agrmax = max(agrmax, entry[1])
 
-		timesort = []
-		for key in times:
-			times[key].append(times[key][1] / agrmax)
-			times[key][1] /= times[key][0]
-			timesort.append((key, times[key]))
-
-		# By likeness
-		timesort = sorted(timesort, key=lambda x: x[1][1])
-
+		matches = matcher.match(file, i/10)
+		
 		print('All by likeness:')
-		for time in timesort:
-			print(time)
-
-		# By aggregate value
-		timesort = sorted(timesort, key=lambda x: x[1][2])
+		for match in sorted(matches, key=lambda entry: entry.likeness):
+			print(match)
 
 		print('Last few by aggregate:')
-		for time in timesort[-5:]:
-			print(time)
-
-#		print(timesort[len(timesort) - 1])
+		for match in sorted(matches, key=lambda entry: entry.aggregate)[-5:]:
+			print(match)
