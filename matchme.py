@@ -61,13 +61,14 @@ class Matcher():
 
 		for i in range(len(bins)):
 			bins[i] /= maxval
+#		np.divide(bins, maxval)
 		end = datetime.datetime.now()
 #		print("FFT step took {} ms".format((end - begin).total_seconds() * 1000))
 		return bins
 
 
-	def match(self, file, offset=0):
-		matchthreshold = math.floor((self.freqmax - self.freqmin) / self.freqstep) * 0.1
+	def match(self, file, offset=0, threshold=0.9):
+		matchthreshold = threshold
 		print("Matching threshold is {}".format(matchthreshold))
 		channeldata = self._fft(file, file.samplerate, offset)
 		matches = []
@@ -81,14 +82,14 @@ class Matcher():
 		for refid in range(len(reference)):
 			for sampleid in range(len(sample)):
 				likeness = self._fft_match(reference[refid], sample[sampleid])
-				if not likeness <= matchthreshold:
+				if not likeness >= matchthreshold:
 					continue
 				avg = likeness
 				for i in range(1, len(reference) - refid):
 					if sampleid + i >= len(sample):
 						break
 					likeness = self._fft_match(reference[refid + i], sample[sampleid + i])
-					if not likeness <= matchthreshold:
+					if not likeness >= matchthreshold:
 						break
 					avg += likeness
 					if i == len(reference) - refid - 1:
@@ -101,13 +102,13 @@ class Matcher():
 		diff = 0
 		for bin in range(len(sample_a)):
 			diff += math.sqrt(abs(sample_a[bin] - sample_b[bin]))
-		return diff
+		return (len(sample_a) - diff) / len(sample_a)
 
-rname = 'airplanes_sample.ogg'
-fname = 'airplanes.ogg'
+rname = 'bedroom_sample.ogg'
+fname = 'flybeat_2015_mix.ogg'
 matcher = None
 with SoundFile(rname) as file:
-	matcher = Matcher(file, slicewidth=2000)
+	matcher = Matcher(file, slicewidth=1000)
 
 #dumpChannelData(matcher.channels)
 
@@ -115,6 +116,7 @@ for i in range(0, 1):
 	print("Offset {}".format(i/10))
 	with SoundFile(fname) as file:
 		times = {}
+		agrmax = 0
 		for match in sorted(matcher.match(file, i/10), key=lambda entry: entry[1][3]):
 #			print(match)
 			seconds = str(match[1][1] - match[1][2])
@@ -126,14 +128,17 @@ for i in range(0, 1):
 			entry[0] += 1
 			entry[1] += match[1][3]
 			times[seconds] = entry
+			agrmax = max(agrmax, entry[1])
 
 		timesort = []
 		for key in times:
+			times[key].append(times[key][1] / agrmax)
 			times[key][1] /= times[key][0]
 			timesort.append((key, times[key]))
 
-		timesort = sorted(timesort, key=lambda x: x[1][1], reverse=True)
+		timesort = sorted(timesort, key=lambda x: x[1][1])
 
-#		for time in timesort:
-#			print(time)
-		print(timesort[len(timesort) - 1])
+		for time in timesort:
+			print(time)
+
+#		print(timesort[len(timesort) - 1])
