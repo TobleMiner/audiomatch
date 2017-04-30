@@ -107,27 +107,33 @@ rname = 'airplanes_sample.ogg'
 fname = 'airplanes.ogg'
 matcher = None
 with SoundFile(rname) as file:
-	matcher = Matcher(file, slicewidth=1000)
+	matcher = Matcher(file, slicewidth=2000)
 
 #dumpChannelData(matcher.channels)
 
-for i in range(0, 10):
+for i in range(0, 1):
 	print("Offset {}".format(i/10))
 	with SoundFile(fname) as file:
 		times = {}
 		for match in sorted(matcher.match(file, i/10), key=lambda entry: entry[1][3]):
 #			print(match)
 			seconds = str(match[1][1] - match[1][2])
+			entry = None
 			if not seconds in times:
-				times[seconds] = 0
-			times[seconds] += 1
+				entry = [0, 0]
+			else:
+				entry = times[seconds]
+			entry[0] += 1
+			entry[1] += match[1][3]
+			times[seconds] = entry
 
 		timesort = []
 		for key in times:
+			times[key][1] /= times[key][0]
 			timesort.append((key, times[key]))
 
-		timesort = sorted(timesort, key=lambda x: x[1])
+		timesort = sorted(timesort, key=lambda x: x[1][1], reverse=True)
 
-		for time in timesort:
-			print(time)
-
+#		for time in timesort:
+#			print(time)
+		print(timesort[len(timesort) - 1])
