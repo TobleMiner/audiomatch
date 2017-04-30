@@ -9,6 +9,13 @@ from multiprocessing.pool import ThreadPool
 import itertools
 import datetime
 
+def dumpChannelData(channels):
+	for chan in channels:
+		for slice in chan:
+			for bin in slice:
+				print(bin)
+			
+
 class Matcher():
 	WIDTH_BASE = 1000 # Milliseconds
 	def __init__(self, reffile, freqmin=0, freqmax=20000, freqstep=10, slicewidth=2000, numthreads=8):
@@ -22,24 +29,22 @@ class Matcher():
 	def _loadref(self, reffile):
 		self.channelcnt = reffile.channels
 		self.samplerate = reffile.samplerate
-		data = reffile.read(always_2d=True)
-		channels = [[sample[chan] for sample in data] for chan in range(self.channelcnt)]
-		self.channels = [None for _ in range(self.channelcnt)]
-		for chan in range(self.channelcnt):
-			self.channels[chan] = self._fft(channels[chan], self.samplerate)
+		self.channels = self._fft(reffile, self.samplerate)
 
-	def _fft(self, data, samplerate):
-		numparts = math.floor(len(data) * Matcher.WIDTH_BASE / samplerate / self.slicewidth)
-		print(numparts)
-		partsamples = math.floor(len(data) / numparts)
-		samples = [data[partsamples * i:partsamples * (i + 1) - 1] for i in range(numparts)]
-		print("Before async")
-		results = [self.pool.apply_async(self._partfft, args=(samples[part], samplerate)) for part in range(numparts)]
-		return [res.get() for res in results]
+	def _fft(self, file, samplerate, offset=0):
+		lenpart = math.floor(file.samplerate * self.slicewidth / Matcher.WIDTH_BASE)
+		channelfft = []
+		results = [[] for _ in range(file.channels)]
+		file.seek(math.floor(offset * file.samplerate))
+		for slice in file.blocks(lenpart, always_2d=True):
+			channels = [[sample[chan] for sample in slice] for chan in range(file.channels)]
+			for chan in range(file.channels):
+				results[chan].append(self.pool.apply_async(self._partfft, args=(channels[chan], samplerate)))
+		return [[res.get() for res in results[chan]] for chan in range(file.channels)]
 
 	def _partfft(self, data, samplerate):
 		begin = datetime.datetime.now()
-		print("Starting fft, {} data points".format(len(data)))
+#		print("Starting fft, {} data points".format(len(data)))
 		fftdata = np.fft.fft(data)
 		freqs = np.fft.fftfreq(len(fftdata))
 		bins = [0 for _ in range(math.floor((self.freqmax - self.freqmin) / self.freqstep))]
@@ -47,7 +52,7 @@ class Matcher():
 		maxval = 0
 		for i in range(len(fftdata)):
 			freq = abs(freqs[i] * samplerate)
-			if freq < self.freqmin or freq > self.freqmax:
+			if freq < self.freqmin or freq >= self.freqmax:
 				continue
 			sample = abs(fftdata[i])
 			bin = math.floor(freq / self.freqstep)
@@ -57,18 +62,16 @@ class Matcher():
 		for i in range(len(bins)):
 			bins[i] /= maxval
 		end = datetime.datetime.now()
-		print("FFT step took {} ms".format((end - begin).total_seconds() * 1000))
+#		print("FFT step took {} ms".format((end - begin).total_seconds() * 1000))
 		return bins
 
-	def match(self, file):
-		data = file.read(always_2d=True)
-		channels = [[sample[chan] for sample in data] for chan in range(self.channelcnt)]
+
+	def match(self, file, offset=0):
 		matchthreshold = math.floor((self.freqmax - self.freqmin) / self.freqstep) * 0.1
 		print("Matching threshold is {}".format(matchthreshold))
-		channeldata = [None for _ in range(self.channelcnt)]
+		channeldata = self._fft(file, file.samplerate, offset)
 		matches = []
 		for chan in range(file.channels):
-			channeldata[chan] = self._fft(channels[chan], file.samplerate)
 			for match in self._fft_fuzzy_match(self.channels[chan], channeldata[chan], matchthreshold):
 				matches.append((chan, match))
 		return matches			
@@ -106,24 +109,25 @@ matcher = None
 with SoundFile(rname) as file:
 	matcher = Matcher(file, slicewidth=1000)
 
-print(matcher.channels)
+#dumpChannelData(matcher.channels)
 
-with SoundFile(fname) as file:
-	times = {}
-	for match in sorted(matcher.match(file), key=lambda entry: entry[1][3]):
-		print(match)
-		seconds = str(match[1][1] - match[1][2])
-		if not seconds in times:
-			times[seconds] = 0
-		times[seconds] += 1
+for i in range(0, 10):
+	print("Offset {}".format(i/10))
+	with SoundFile(fname) as file:
+		times = {}
+		for match in sorted(matcher.match(file, i/10), key=lambda entry: entry[1][3]):
+#			print(match)
+			seconds = str(match[1][1] - match[1][2])
+			if not seconds in times:
+				times[seconds] = 0
+			times[seconds] += 1
 
-	timesort = []
-	for key in times:
-		timesort.append((key, times[key]))
+		timesort = []
+		for key in times:
+			timesort.append((key, times[key]))
 
-	timesort = sorted(timesort, key=lambda x: x[1])
+		timesort = sorted(timesort, key=lambda x: x[1])
 
-	for time in timesort:
-		print(time)
+		for time in timesort:
+			print(time)
 
-print(matcher.freqstep)
