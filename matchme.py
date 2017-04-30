@@ -105,7 +105,7 @@ class Matcher():
 		return (len(sample_a) - diff) / len(sample_a)
 
 rname = 'bedroom_sample.ogg'
-fname = 'flybeat_2015_mix.ogg'
+fname = 'bedroom_sample.ogg'
 matcher = None
 with SoundFile(rname) as file:
 	matcher = Matcher(file, slicewidth=1000)
@@ -136,9 +136,18 @@ for i in range(0, 1):
 			times[key][1] /= times[key][0]
 			timesort.append((key, times[key]))
 
+		# By likeness
 		timesort = sorted(timesort, key=lambda x: x[1][1])
 
+		print('All by likeness:')
 		for time in timesort:
+			print(time)
+
+		# By aggregate value
+		timesort = sorted(timesort, key=lambda x: x[1][2])
+
+		print('Last few by aggregate:')
+		for time in timesort[-5:]:
 			print(time)
 
 #		print(timesort[len(timesort) - 1])
