@@ -11,6 +11,7 @@ import datetime
 from datetime import timedelta as dt
 import matplotlib.pyplot as plot
 from argparse import ArgumentParser
+import os
 
 def dumpChannelData(channels):
 	for chan in channels:
@@ -39,6 +40,9 @@ class GroupMatch(Match):
 
 	def __repr__(self):
 		return str(self)
+
+	def toCSV(self):
+		return '{};{};{};{}'.format(self.startpos.total_seconds(), self.count, self.likeness, self.aggregate)
 
 class Matcher():
 	WIDTH_BASE = 1000 # Milliseconds
@@ -151,17 +155,24 @@ class Matcher():
 
 parser = ArgumentParser()
 
-parser.add_argument('-t', '--slicewidth', type=int, help='Width of audio fft slices')
+parser.add_argument('-r', '--reportdir', type=str, help='Dir to save reports in')
 parser.add_argument('-o', '--offset', type=int, help='Offset in files being matched')
 parser.add_argument('-s', '--steps', type=int, help='Steps to apply offset')
+parser.add_argument('-t', '--slicewidth', type=int, help='Width of audio fft slices')
 parser.add_argument('reffile', help='Reference file')
 parser.add_argument('matchfiles', help='Files to match against reffile', nargs='+')
 
 args = parser.parse_args()
 
-if not args.slicewidth: args.slicewidth = 2000
+if not args.reportdir: args.reportdir = 'report'
 if not args.offset: args.offset = 0
 if not args.steps: args.steps = 1
+if not args.slicewidth: args.slicewidth = 2000
+
+if not os.path.isdir(args.reportdir):
+	os.mkdir(args.reportdir)
+
+print('Using slicewidth of {} s'.format(args.slicewidth / Matcher.WIDTH_BASE))
 
 matcher = None
 print("Loading reference file '{}'".format(args.reffile))
@@ -171,37 +182,46 @@ with SoundFile(args.reffile) as file:
 #dumpChannelData(matcher.channels)
 
 for matchfile in args.matchfiles:
+	reportfile = os.path.join(args.reportdir, os.path.basename(matchfile))
 	print("Starting matching on '{}', final offset {}, steps {}".format(matchfile, args.offset, args.steps))
-	for i in range(0, args.steps):	
-		offset = (i + 1) * args.offset / args.steps
-		print("{}: Offset {}".format(matchfile, offset))
-		with SoundFile(matchfile) as file:
-			times = {}
-			agrmax = 0
+	with open(reportfile, 'w') as report:
+		print("Writing report to '{}'".format(reportfile))
+		report.write('# slicewidth={}, offset={}, steps={}\n'.format(args.slicewidth, args.offset, args.steps))
+		for i in range(0, args.steps):	
+			offset = (i + 1) * args.offset / args.steps
+			report.write(':{}\n'.format(offset))
+			print("{}: Offset {}".format(matchfile, offset))
+			with SoundFile(matchfile) as file:
+				times = {}
+				agrmax = 0
 
-			begin = datetime.datetime.now()
-			matches = sorted(matcher.match(file, offset), key=lambda entry: entry.startpos.total_seconds())
-			end = datetime.datetime.now()
+				begin = datetime.datetime.now()
+				matches = matcher.match(file, offset)
+				end = datetime.datetime.now()
 
-			print("Step took {} seconds".format((end - begin).total_seconds()))
+				print("Step took {} seconds".format((end - begin).total_seconds()))
 
-			print('All by likeness:')
-			for match in sorted(matches, key=lambda entry: entry.likeness):
-				print(match)
-
-			print('Last few by aggregate:')
-			for match in sorted(matches, key=lambda entry: entry.aggregate)[-5:]:
-				print(match)
-
-			# Visualize results as bins in time domain
-			TIME_GRANULARITY = 10 # seconds
-			bins = [0 for _ in range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)]
-			x = range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)
-			for t in range(len(bins)):
 				for match in matches:
-					time = match.startpos.total_seconds()
-					if(time >= t * TIME_GRANULARITY and time < (t + 1) * TIME_GRANULARITY):
-						bins[t] += match.count
-			plot.bar(x, bins, color="green")
-			plot.savefig("plot.png")
+					report.write('{}\n'.format(match.toCSV()))
+
+				print('Last few by likeness:')
+				for match in sorted(matches, key=lambda entry: entry.likeness)[-5:]:
+					print(match)
+
+				print('Last few by aggregate:')
+				for match in sorted(matches, key=lambda entry: entry.aggregate)[-5:]:
+					print(match)
+
+				# Visualize results as bins in time domain
+				TIME_GRANULARITY = 10 # seconds
+				bins = [0 for _ in range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)]
+				x = range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)
+				for t in range(len(bins)):
+					for match in matches:
+						time = match.startpos.total_seconds()
+						if(time >= t * TIME_GRANULARITY and time < (t + 1) * TIME_GRANULARITY):
+							bins[t] += match.count
+				plot.bar(x, bins, color="green")
+				plot.savefig("plot.png")
 			
+ 
