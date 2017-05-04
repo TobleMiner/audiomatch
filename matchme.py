@@ -9,6 +9,8 @@ from multiprocessing.pool import ThreadPool
 import itertools
 import datetime
 from datetime import timedelta as dt
+import matplotlib.pyplot as plot
+from argparse import ArgumentParser
 
 def dumpChannelData(channels):
 	for chan in channels:
@@ -57,7 +59,8 @@ class Matcher():
 		lenpart = math.floor(file.samplerate * self.slicewidth / Matcher.WIDTH_BASE)
 		channelfft = []
 		results = [[] for _ in range(file.channels)]
-		file.seek(math.floor(offset * file.samplerate))
+		foffset = math.floor(offset / Matcher.WIDTH_BASE * file.samplerate)
+		file.seek(foffset)
 		for slice in file.blocks(lenpart, always_2d=True):
 			channels = [[sample[chan] for sample in slice] for chan in range(file.channels)]
 			for chan in range(file.channels):
@@ -65,12 +68,12 @@ class Matcher():
 		return [[res.get() for res in results[chan]] for chan in range(file.channels)]
 
 	def _partfft(self, data, samplerate):
-		begin = datetime.datetime.now()
-		print("Starting fft, {} data points".format(len(data)))
+#		begin = datetime.datetime.now()
+#		print("Starting fft, {} data points".format(len(data)))
 		fftdata = np.fft.fft(data)
 		freqs = np.fft.fftfreq(len(fftdata))
 		bins = [0 for _ in range(math.floor((self.freqmax - self.freqmin) / self.freqstep))]
-		fftend = datetime.datetime.now()
+#		fftend = datetime.datetime.now()
 		maxval = 0
 		for i in range(len(fftdata)):
 			freq = abs(freqs[i] * samplerate)
@@ -82,8 +85,8 @@ class Matcher():
 			maxval = max(maxval, bins[bin])
 
 		bins = np.divide(bins, maxval)
-		end = datetime.datetime.now()
-		print("FFT step took {} ms, postprocessing took {} ms, total : {} ms".format((fftend - begin).total_seconds() * 1000, (end - fftend).total_seconds() * 1000, (end - begin).total_seconds() * 1000))
+#		end = datetime.datetime.now()
+#		print("FFT step took {} ms, postprocessing took {} ms, total : {} ms".format((fftend - begin).total_seconds() * 1000, (end - fftend).total_seconds() * 1000, (end - begin).total_seconds() * 1000))
 		return bins
 
 
@@ -146,26 +149,59 @@ class Matcher():
 			diff += math.sqrt(abs(sample_a[bin] - sample_b[bin]))
 		return (len(sample_a) - diff) / len(sample_a)
 
-rname = 'airplanes_sample.ogg'
-fname = 'airplanes.ogg'
+parser = ArgumentParser()
+
+parser.add_argument('-t', '--slicewidth', type=int, help='Width of audio fft slices')
+parser.add_argument('-o', '--offset', type=int, help='Offset in files being matched')
+parser.add_argument('-s', '--steps', type=int, help='Steps to apply offset')
+parser.add_argument('reffile', help='Reference file')
+parser.add_argument('matchfiles', help='Files to match against reffile', nargs='+')
+
+args = parser.parse_args()
+
+if not args.slicewidth: args.slicewidth = 2000
+if not args.offset: args.offset = 0
+if not args.steps: args.steps = 1
+
 matcher = None
-with SoundFile(rname) as file:
-	matcher = Matcher(file, slicewidth=1000)
+print("Loading reference file '{}'".format(args.reffile))
+with SoundFile(args.reffile) as file:
+	matcher = Matcher(file, slicewidth=args.slicewidth)
 
 #dumpChannelData(matcher.channels)
 
-for i in range(0, 1):
-	print("Offset {}".format(i/10))
-	with SoundFile(fname) as file:
-		times = {}
-		agrmax = 0
+for matchfile in args.matchfiles:
+	print("Starting matching on '{}', final offset {}, steps {}".format(matchfile, args.offset, args.steps))
+	for i in range(0, args.steps):	
+		offset = (i + 1) * args.offset / args.steps
+		print("{}: Offset {}".format(matchfile, offset))
+		with SoundFile(matchfile) as file:
+			times = {}
+			agrmax = 0
 
-		matches = matcher.match(file, i/10)
-		
-		print('All by likeness:')
-		for match in sorted(matches, key=lambda entry: entry.likeness):
-			print(match)
+			begin = datetime.datetime.now()
+			matches = sorted(matcher.match(file, offset), key=lambda entry: entry.startpos.total_seconds())
+			end = datetime.datetime.now()
 
-		print('Last few by aggregate:')
-		for match in sorted(matches, key=lambda entry: entry.aggregate)[-5:]:
-			print(match)
+			print("Step took {} seconds".format((end - begin).total_seconds()))
+
+			print('All by likeness:')
+			for match in sorted(matches, key=lambda entry: entry.likeness):
+				print(match)
+
+			print('Last few by aggregate:')
+			for match in sorted(matches, key=lambda entry: entry.aggregate)[-5:]:
+				print(match)
+
+			# Visualize results as bins in time domain
+			TIME_GRANULARITY = 10 # seconds
+			bins = [0 for _ in range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)]
+			x = range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)
+			for t in range(len(bins)):
+				for match in matches:
+					time = match.startpos.total_seconds()
+					if(time >= t * TIME_GRANULARITY and time < (t + 1) * TIME_GRANULARITY):
+						bins[t] += match.count
+			plot.bar(x, bins, color="green")
+			plot.savefig("plot.png")
+			
