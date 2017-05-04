@@ -213,15 +213,15 @@ for matchfile in args.matchfiles:
 					print(match)
 
 				# Visualize results as bins in time domain
-				TIME_GRANULARITY = 10 # seconds
-				bins = [0 for _ in range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)]
-				x = range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)
-				for t in range(len(bins)):
-					for match in matches:
-						time = match.startpos.total_seconds()
-						if(time >= t * TIME_GRANULARITY and time < (t + 1) * TIME_GRANULARITY):
-							bins[t] += match.count
-				plot.bar(x, bins, color="green")
-				plot.savefig("plot.png")
+#				TIME_GRANULARITY = 10 # seconds
+#				bins = [0 for _ in range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)]
+#				x = range(0, math.ceil(matches[-1:][0].startpos.total_seconds()), TIME_GRANULARITY)
+#				for t in range(len(bins)):
+#					for match in matches:
+#						time = match.startpos.total_seconds()
+#						if(time >= t * TIME_GRANULARITY and time < (t + 1) * TIME_GRANULARITY):
+#							bins[t] += match.count
+#				plot.bar(x, bins, color="green")
+#				plot.savefig("plot.png")
 			
  
