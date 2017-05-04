@@ -123,7 +123,7 @@ class Matcher():
 			match.likeness /= match.count
 
 		return [timemap[key] for key in timemap]
-	
+
 	def _fft_fuzzy_match(self, reference, sample, matchthreshold):
 		matches = []
 		for refid in range(len(reference)):
@@ -187,7 +187,7 @@ for matchfile in args.matchfiles:
 	with open(reportfile, 'w') as report:
 		print("Writing report to '{}'".format(reportfile))
 		report.write('# slicewidth={}, offset={}, steps={}\n'.format(args.slicewidth, args.offset, args.steps))
-		for i in range(0, args.steps):	
+		for i in range(0, args.steps):
 			offset = (i + 1) * args.offset / args.steps
 			report.write(':{}\n'.format(offset))
 			print("{}: Offset {}".format(matchfile, offset))
@@ -223,5 +223,3 @@ for matchfile in args.matchfiles:
 #							bins[t] += match.count
 #				plot.bar(x, bins, color="green")
 #				plot.savefig("plot.png")
-			
- 
