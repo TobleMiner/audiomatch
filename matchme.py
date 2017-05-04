@@ -182,7 +182,7 @@ with SoundFile(args.reffile) as file:
 #dumpChannelData(matcher.channels)
 
 for matchfile in args.matchfiles:
-	reportfile = os.path.join(args.reportdir, os.path.basename(matchfile))
+	reportfile = '{}.txt'.format(os.path.join(args.reportdir, os.path.basename(matchfile)))
 	print("Starting matching on '{}', final offset {}, steps {}".format(matchfile, args.offset, args.steps))
 	with open(reportfile, 'w') as report:
 		print("Writing report to '{}'".format(reportfile))
