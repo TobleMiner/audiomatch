@@ -181,9 +181,12 @@ with SoundFile(args.reffile) as file:
 
 #dumpChannelData(matcher.channels)
 
+songcount = 0
 for matchfile in args.matchfiles:
+	songcount += 1
 	reportfile = '{}.txt'.format(os.path.join(args.reportdir, os.path.basename(matchfile)))
-	print("Starting matching on '{}', final offset {}, steps {}".format(matchfile, args.offset, args.steps))
+	print("[{}/{}] Starting matching on '{}', final offset {}, steps {}"
+		.format(songcount, len(args.matchfiles), matchfile, args.offset, args.steps))
 	with open(reportfile, 'w') as report:
 		print("Writing report to '{}'".format(reportfile))
 		report.write('# slicewidth={}, offset={}, steps={}\n'.format(args.slicewidth, args.offset, args.steps))
